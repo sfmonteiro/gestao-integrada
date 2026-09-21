@@ -18,7 +18,7 @@ app.get("/callback", async (req, res) => {
   const code = req.query.code;
 
   try {
-    const response = await axios.post(
+    const resposta = await axios.post(
       "https://auth.contaazul.com/oauth2/token",
       new URLSearchParams({
         client_id: process.env.CONTAAZUL_CLIENT_ID || "",
@@ -29,7 +29,7 @@ app.get("/callback", async (req, res) => {
       })
     );
     const {access_token: accessToken, refresh_token: refreshToken} =
-        response.data;
+        resposta.data;
 
     await db
       .collection("empresas")
@@ -46,6 +46,50 @@ app.get("/callback", async (req, res) => {
   } catch (error) {
     logger.error("Erro ao trocar código por token", error);
     res.status(500).send("Erro ao conectar com a ContaAzul.");
+  }
+});
+
+app.get("/contas-a-pagar", async (req, res) => {
+  try {
+    const doc = await db
+      .collection("empresas")
+      .doc("minha-empresa")
+      .collection("integracoes")
+      .doc("contaazul")
+      .get();
+
+    const dados = doc.data();
+
+    const accessToken = dados?.accessToken;
+    if (!accessToken) {
+      res.status(400).send("Empresa ainda não conectou a ContaAzul.");
+      return;
+    }
+
+    const hoje = new Date();
+    const em30dias = new Date();
+    em30dias.setDate(hoje.getDate() + 30);
+
+    const resposta = await axios.get(
+      "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros" +
+        "/contas-a-pagar/buscar",
+      {
+        // Cabeçalho da autencicação
+        headers: {Authorization: `Bearer ${accessToken}`},
+        // Parâmetros da consulta
+        params: {
+          pagina: 1,
+          tamanho_pagina: 50,
+          data_vencimento_de: hoje.toISOString().split("T")[0],
+          data_vencimento_ate: em30dias.toISOString().split("T")[0],
+        },
+      }
+    );
+
+    res.json(resposta.data);
+  } catch (error) {
+    logger.error("Erro ao buscar contas a pagar", error);
+    res.status(500).send("Erro ao buscar contas a pagar.");
   }
 });
 
