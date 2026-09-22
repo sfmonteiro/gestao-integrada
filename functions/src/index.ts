@@ -93,4 +93,37 @@ app.get("/contas-a-pagar", async (req, res) => {
   }
 });
 
+app.get("/contas-financeiras", async (req, res) => {
+  try {
+    const doc = await db
+      .collection("empresas")
+      .doc("minha-empresa")
+      .collection("integracoes")
+      .doc("contaazul")
+      .get();
+
+    const dados = doc.data();
+    const accessToken = dados?.accessToken;
+
+    if (!accessToken) {
+      res.status(400).send("Empresa ainda não conectou a ContaAzul.");
+      return;
+    }
+    const resposta = await axios.get(
+      "https://api-v2.contaazul.com/v1/conta-financeira",
+      {
+        headers: {Authorization: `Bearer ${accessToken}`},
+        params: {
+          pagina: 1,
+          tamanho_pagina: 50,
+        },
+      }
+    );
+    res.json(resposta.data);
+  } catch (error) {
+    logger.error("Erro ao buscar contas financeiras", error);
+    res.status(500).send("Erro ao buscar contas financeiras.");
+  }
+});
+
 export const api = onRequest(app);
