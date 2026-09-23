@@ -13,6 +13,7 @@ setGlobalOptions({maxInstances: 10});
 
 const db = admin.firestore();
 const app = express();
+app.use(express.json());
 
 app.get("/callback", async (req, res) => {
   const code = req.query.code;
@@ -44,7 +45,8 @@ app.get("/callback", async (req, res) => {
 
     res.send("Conectado com sucesso! Token salvo no Firestore.");
   } catch (error) {
-    logger.error("Erro ao trocar código por token", error);
+    logger.error("Erro ao trocar código por token",
+      axios.isAxiosError(error) ? error.response?.data : error);
     res.status(500).send("Erro ao conectar com a ContaAzul.");
   }
 });
@@ -88,7 +90,7 @@ app.get("/contas-a-pagar", async (req, res) => {
 
     res.json(resposta.data);
   } catch (error) {
-    logger.error("Erro ao buscar contas a pagar", error);
+    logger.error("Erro ao buscar contas a pagar", axios.isAxiosError(error) ? error.response?.data : error);
     res.status(500).send("Erro ao buscar contas a pagar.");
   }
 });
@@ -121,8 +123,53 @@ app.get("/contas-financeiras", async (req, res) => {
     );
     res.json(resposta.data);
   } catch (error) {
-    logger.error("Erro ao buscar contas financeiras", error);
+    logger.error("Erro ao buscar contas financeiras", axios.isAxiosError(error) ? error.response?.data : error);
     res.status(500).send("Erro ao buscar contas financeiras.");
+  }
+});
+
+app.post("/marcar-pago", async (req, res) => {
+  try {
+    const {parcelaId, contaFinanceiraId, valor} = req.body;
+
+    const doc = await db
+      .collection("empresas")
+      .doc("minha-empresa")
+      .collection("integracoes")
+      .doc("contaazul")
+      .get();
+
+    const dados = doc.data();
+    const accessToken = dados?.accessToken;
+
+    if (!accessToken) {
+      res.status(400).send("Empresa ainda não conectou a ContaAzul.");
+      return;
+    }
+    const hoje = new Date().toISOString().split("T")[0];
+
+    await axios.post(
+      "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros" +
+        `/parcelas/${parcelaId}/baixa`,
+      {
+        data_pagamento: hoje,
+        composicao_valor: {
+          valor_bruto: valor,
+          multa: 0,
+          juros: 0,
+          desconto: 0,
+          taxa: 0,
+        },
+        conta_financeira: contaFinanceiraId,
+      },
+      {
+        headers: {Authorization: `Bearer ${accessToken}`},
+      }
+    );
+    res.send("Baixa realizada com sucesso!");
+  } catch (error) {
+    logger.error("Erro ao dar baixa na parcela", axios.isAxiosError(error) ? error.response?.data : error);
+    res.status(500).send("Erro ao marcar como pago.");
   }
 });
 
