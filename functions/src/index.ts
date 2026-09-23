@@ -15,6 +15,62 @@ const db = admin.firestore();
 const app = express();
 app.use(express.json());
 
+// =================      FUNÇÕES      =================
+
+/**
+ * Busca o access token salvo, renovando automaticamente
+ * via refresh token caso esteja expirado.
+ * @return {Promise<string | null>} O token válido, ou null se falhar.
+ */
+async function obterAccessTokenValido(): Promise<string | null> {
+  const doc = await db
+    .collection("empresas")
+    .doc("minha-empresa")
+    .collection("integracoes")
+    .doc("contaazul")
+    .get();
+
+  const dados = doc.data();
+
+  if (!dados?.refreshToken) {
+    return null;
+  }
+
+  try {
+    const resposta = await axios.post(
+      "https://auth.contaazul.com/oauth2/token",
+      new URLSearchParams({
+        client_id: process.env.CONTAAZUL_CLIENT_ID || "",
+        client_secret: process.env.CONTAAZUL_CLIENT_SECRET || "",
+        grant_type: "refresh_token",
+        refresh_token: dados.refreshToken,
+      })
+    );
+
+    const {access_token: novoAccessToken, refresh_token: novoRefreshToken} =
+            resposta.data;
+
+    await db
+      .collection("empresas")
+      .doc("minha-empresa")
+      .collection("integracoes")
+      .doc("contaazul")
+      .set({
+        accessToken: novoAccessToken,
+        refreshToken: novoRefreshToken || dados.refreshToken,
+        conectadoEm: dados.conectadoEm,
+        renovadoEm: new Date().toISOString(),
+      });
+    return novoAccessToken;
+  } catch (error) {
+    logger.error("Erro ao renovar token", axios.isAxiosError(error) ?
+      error.response?.data : error);
+    return null;
+  }
+}
+
+// =================      ROTAS      =================
+
 app.get("/callback", async (req, res) => {
   const code = req.query.code;
 
@@ -53,21 +109,12 @@ app.get("/callback", async (req, res) => {
 
 app.get("/contas-a-pagar", async (req, res) => {
   try {
-    const doc = await db
-      .collection("empresas")
-      .doc("minha-empresa")
-      .collection("integracoes")
-      .doc("contaazul")
-      .get();
+    const accessToken = await obterAccessTokenValido();
 
-    const dados = doc.data();
-
-    const accessToken = dados?.accessToken;
     if (!accessToken) {
       res.status(400).send("Empresa ainda não conectou a ContaAzul.");
       return;
     }
-
     const hoje = new Date();
     const em30dias = new Date();
     em30dias.setDate(hoje.getDate() + 30);
@@ -90,22 +137,15 @@ app.get("/contas-a-pagar", async (req, res) => {
 
     res.json(resposta.data);
   } catch (error) {
-    logger.error("Erro ao buscar contas a pagar", axios.isAxiosError(error) ? error.response?.data : error);
+    logger.error("Erro ao buscar contas a pagar",
+      axios.isAxiosError(error) ? error.response?.data : error);
     res.status(500).send("Erro ao buscar contas a pagar.");
   }
 });
 
 app.get("/contas-financeiras", async (req, res) => {
   try {
-    const doc = await db
-      .collection("empresas")
-      .doc("minha-empresa")
-      .collection("integracoes")
-      .doc("contaazul")
-      .get();
-
-    const dados = doc.data();
-    const accessToken = dados?.accessToken;
+    const accessToken = await obterAccessTokenValido();
 
     if (!accessToken) {
       res.status(400).send("Empresa ainda não conectou a ContaAzul.");
@@ -123,7 +163,8 @@ app.get("/contas-financeiras", async (req, res) => {
     );
     res.json(resposta.data);
   } catch (error) {
-    logger.error("Erro ao buscar contas financeiras", axios.isAxiosError(error) ? error.response?.data : error);
+    logger.error("Erro ao buscar contas financeiras",
+      axios.isAxiosError(error) ? error.response?.data : error);
     res.status(500).send("Erro ao buscar contas financeiras.");
   }
 });
@@ -132,15 +173,7 @@ app.post("/marcar-pago", async (req, res) => {
   try {
     const {parcelaId, contaFinanceiraId, valor} = req.body;
 
-    const doc = await db
-      .collection("empresas")
-      .doc("minha-empresa")
-      .collection("integracoes")
-      .doc("contaazul")
-      .get();
-
-    const dados = doc.data();
-    const accessToken = dados?.accessToken;
+    const accessToken = await obterAccessTokenValido();
 
     if (!accessToken) {
       res.status(400).send("Empresa ainda não conectou a ContaAzul.");
@@ -168,7 +201,8 @@ app.post("/marcar-pago", async (req, res) => {
     );
     res.send("Baixa realizada com sucesso!");
   } catch (error) {
-    logger.error("Erro ao dar baixa na parcela", axios.isAxiosError(error) ? error.response?.data : error);
+    logger.error("Erro ao dar baixa na parcela",
+      axios.isAxiosError(error) ? error.response?.data : error);
     res.status(500).send("Erro ao marcar como pago.");
   }
 });
