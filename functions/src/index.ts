@@ -179,7 +179,9 @@ app.post("/marcar-pago", async (req, res) => {
       res.status(400).send("Empresa ainda não conectou a ContaAzul.");
       return;
     }
-    const hoje = new Date().toISOString().split("T")[0];
+    const hoje = new Date().toLocaleDateString("sv-SE", {
+      timeZone: "America/Sao_Paulo",
+    });
 
     await axios.post(
       "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros" +
