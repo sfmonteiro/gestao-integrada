@@ -33,7 +33,7 @@ export default function App() {
     setCarregando(true);
     setErro(null);
 
-    fetch(`${API_URL}/contas-a-pagar`)
+    fetch(`${API_URL}/contas-a-pagar?mes=${mes}&ano=${ano}`)
       .then((res) => {
         if (!res.ok) throw new Error("Erro ao buscar despesas");
         return res.json();

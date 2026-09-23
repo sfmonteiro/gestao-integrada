@@ -5,6 +5,7 @@ import express from "express";
 import axios from "axios";
 import * as dotenv from "dotenv";
 import * as admin from "firebase-admin";
+import cors from "cors";
 
 dotenv.config();
 admin.initializeApp();
@@ -14,6 +15,7 @@ setGlobalOptions({maxInstances: 10});
 const db = admin.firestore();
 const app = express();
 app.use(express.json());
+app.use(cors({origin: true}));
 
 // =================      FUNÇÕES      =================
 
@@ -115,9 +117,13 @@ app.get("/contas-a-pagar", async (req, res) => {
       res.status(400).send("Empresa ainda não conectou a ContaAzul.");
       return;
     }
+
     const hoje = new Date();
-    const em30dias = new Date();
-    em30dias.setDate(hoje.getDate() + 30);
+    const mes = req.query.mes ? Number(req.query.mes) : hoje.getMonth();
+    const ano = req.query.ano ? Number(req.query.ano) : hoje.getFullYear();
+
+    const inicioDoMes = new Date(ano, mes, 1);
+    const fimDoMes = new Date(ano, mes + 1, 0);
 
     const resposta = await axios.get(
       "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros" +
@@ -129,8 +135,8 @@ app.get("/contas-a-pagar", async (req, res) => {
         params: {
           pagina: 1,
           tamanho_pagina: 50,
-          data_vencimento_de: hoje.toISOString().split("T")[0],
-          data_vencimento_ate: em30dias.toISOString().split("T")[0],
+          data_vencimento_de: inicioDoMes.toISOString().split("T")[0],
+          data_vencimento_ate: fimDoMes.toISOString().split("T")[0],
         },
       }
     );
